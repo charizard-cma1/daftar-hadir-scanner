@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Scan Barcode</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #fff;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      margin-bottom: 5px;
+      font-size: 24px;
+      color: #27ae60;
+      letter-spacing: 0.5px;
+    }
+
+    .status {
+      margin-top: 10px;
+      font-size: 16px;
+      color: #aaa;
+    }
+
+    .scanner-frame {
+      position: relative;
+      width: 100%;
+      max-width: 600px;
+      margin: 20px auto;
+      border: 4px solid #e74c3c;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    #video {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #000;
+    }
+
+    #result {
+      margin-top: 20px;
+      font-size: 20px;
+      color: #27ae60;
+      font-weight: 500;
+      min-height: 30px;
+      word-break: break-all;
+    }
+
+    .info {
+      margin-top: 20px;
+      font-size: 14px;
+      color: #bbb;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 Scan Barcode</h1>
+    <p class="status">📸 Kamera sedang memuat...</p>
+    <p class="info">Arahkan kamera ke barcode saat halaman dimuat.</p>
+
+    <div class="scanner-frame">
+      <video id="video" autoplay playsinline></video>
+    </div>
+
+    <div id="result">Hasil scan muncul di sini...</div>
+  </div>
+
+  <!-- 📦 ZXing.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.0/dist/index.min.js"></script>
+
+  <!-- 🔊 Notifikasi suara -->
+  <audio id="beepSound" src="https://assets.mixkit.co/sfx/preview/mixkit-achievement-bell-2017.mp3" preload="auto"></audio>
+
+  <script>
+    const video = document.getElementById("video");
+    const resultDiv = document.getElementById("result");
+    const statusDiv = document.getElementById("status");
+    const beepSound = document.getElementById("beepSound");
+
+    // 📌 GANTI URL INI DENGAN URL DEPLOY GOOGLE APPS SCRIPT KAMU!
+    const SPREADSHEET_URL = "https://script.google.com/macros/s/AKfycby9fUvRa1m17xSSdkqWhq_jWUe0RPR9s_CU1ERuiu1R9FpKXxcKIqCr1OY43-sEgD4p/exec";
+
+    let isScanning = false;
+    let scanInterval;
+
+    const codeReader = new ZXing.BrowserQRCodeReader();
+
+    window.addEventListener("load", async () => {
+      statusDiv.textContent = "🔍 Mengaktifkan kamera...";
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: "environment"
+          }
+        });
+
+        video.srcObject = stream;
+        statusDiv.textContent = "✅ Kamera aktif. Scan sedang berjalan...";
+
+        startAutoScan();
+      } catch (err) {
+        console.error("❌ Gagal akses kamera:", err);
+        statusDiv.textContent = "❌ Izin kamera ditolak atau tidak didukung. Gunakan HTTPS dan pastikan izin diberikan.";
+        resultDiv.textContent = "Error: " + err.message;
+      }
+    });
+
+    function startAutoScan() {
+      if (isScanning) return;
+      isScanning = true;
+
+      if (scanInterval) clearInterval(scanInterval);
+
+      scanInterval = setInterval(async () => {
+        try {
+          const result = await codeReader.decodeFromVideoDevice(
+            null,
+            video,
+            (result, error) => {
+              if (result) {
+                const text = result.getText();
+                resultDiv.textContent = `✅ Ditemukan: ${text}`;
+                statusDiv.textContent = "🟢 Scan berhasil – Simpan ke spreadsheet...";
+                console.log("Ditemukan:", text);
+
+                // 🔊 Notifikasi suara
+                beepSound.currentTime = 0;
+                beepSound.play().catch(e => console.warn("Audio tidak bisa diputar:", e));
+
+                // 💾 Simpan ke Google Spreadsheet
+                try {
+                  const response = await fetch(SPREADSHEET_URL, {
+                    method: "POST",
+                    body: new URLSearchParams({ value: text }),
+                    headers: {
+                      "Content-Type": "application/x-www-form-urlencoded"
+                    }
+                  });
+                  const data = await response.json();
+                  if (data.status === "success") {
+                    console.log("✅ Berhasil simpan ke spreadsheet");
+                  } else {
+                    console.warn("⚠️ Gagal simpan:", data);
+                  }
+                } catch (err) {
+                  console.error("❌ Gagal ke API Google Apps Script:", err);
+                  statusDiv.textContent = "⚠️ Data terkirim, tapi simpan gagal";
+                }
+              } else if (error && !(error instanceof ZXing.NotFoundException)) {
+                console.warn("Error saat scan:", error);
+              }
+            }
+          );
+        } catch (err) {
+          if (err.message.includes("NotReadableError") || err.message.includes("PermissionDeniedError")) {
+            statusDiv.textContent = "🔐 Izin kamera ditolak. Periksa browser.";
+          } else {
+            console.error("Error lain:", err);
+          }
+        }
+      }, 200);
+    }
+
+    // Optional: Stop scanning after detection (untuk avoid lag)
+    // setTimeout(() => { clearInterval(scanInterval); }, 10000);
+  </script>
+</body>
+</html>
