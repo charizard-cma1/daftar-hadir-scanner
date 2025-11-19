@@ -70,6 +70,46 @@
       margin-right: auto;
     }
 
+    .button-group {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 12px 30px;
+      font-size: 16px;
+      font-weight: 500;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-start {
+      background: #27ae60;
+      color: white;
+    }
+
+    .btn-start:hover {
+      background: #219a52;
+      transform: translateY(-2px);
+    }
+
+    .btn-stop {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .btn-stop:hover {
+      background: #c0392b;
+      transform: translateY(-2px);
+    }
+
     .scan-overlay {
       position: absolute;
       top: 0;
@@ -79,13 +119,17 @@
       pointer-events: none;
       background-image: radial-gradient(circle at center, transparent 20%, rgba(0,0,0,0.7) 100%);
     }
+
+    .hidden {
+      display: none;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>🚀 Scan Barcode</h1>
-    <p class="status">📸 Kamera sedang memuat...</p>
-    <p class="info">Arahkan kamera ke barcode saat halaman dimuat.</p>
+    <p class="status">📸 Kamera tidak aktif. Tekan tombol untuk memulai.</p>
+    <p class="info">Arahkan kamera ke barcode setelah memulai scan.</p>
 
     <div class="scanner-frame">
       <video id="video" autoplay playsinline></video>
@@ -93,6 +137,11 @@
     </div>
 
     <div id="result">Hasil scan muncul di sini...</div>
+
+    <div class="button-group">
+      <button id="startBtn" class="btn btn-start">▶️ Mulai Scan</button>
+      <button id="stopBtn" class="btn btn-stop hidden">⏹️ Hentikan</button>
+    </div>
   </div>
 
   <!-- 📦 ZXing.js (CDN) -->
@@ -105,6 +154,8 @@
     const video = document.getElementById("video");
     const resultDiv = document.getElementById("result");
     const statusDiv = document.getElementById("status");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
     const beepSound = document.getElementById("beepSound");
 
     // 📌 GANTI URL INI DENGAN URL DEPLOY GOOGLE APPS SCRIPT KAMU!
@@ -112,122 +163,145 @@
 
     let isScanning = false;
     let stream;
+    let scanLoopInterval;
 
     const codeReader = new ZXing.BrowserQRCodeReader();
 
-    // ⚠️ Kunci: Tunggu hingga halaman siap sebelum akses kamera
-    window.addEventListener("load", async () => {
-      statusDiv.textContent = "🔍 Menyiapkan kamera...";
-      
-      try {
-        // ❗ Gunakan environment (belakang) jika tersedia, fallback ke front
-        const facingMode = "environment";
+    // ⚠️ Mulai scan saat tombol "Mulai Scan" ditekan
+    startBtn.addEventListener("click", async () => {
+      if (isScanning) return;
 
+      statusDiv.textContent = "🔍 Menyalakan kamera...";
+
+      try {
+        // ❗ Prioritaskan kamera belakang (environment)
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 1280 },
             height: { ideal: 720 },
-            facingMode: facingMode
+            facingMode: "environment"
           }
         });
 
         video.srcObject = stream;
-        statusDiv.textContent = "✅ Kamera aktif. Scan otomatis berjalan...";
+        statusDiv.textContent = "✅ Kamera aktif. Scan sedang berjalan...";
+        startBtn.classList.add("hidden");
+        stopBtn.classList.remove("hidden");
 
-        // ✅ Mulai scan otomatis segera
+        isScanning = true;
         startAutoScan();
 
       } catch (err) {
         console.error("❌ Gagal akses kamera:", err);
-        statusDiv.textContent = "❌ Kamera tidak tersedia. Gunakan perangkat pendukung (HP dengan kamera belakang) dan pastikan akses diizinkan.";
-        
-        // 🔎 Coba fallback ke kamera depan jika gagal
-        if (err.name === "NotFoundError" || err.message.includes("no cameras found")) {
-          try {
-            const frontStream = await navigator.mediaDevices.getUserMedia({
-              video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                facingMode: "user"
-              }
-            });
-            video.srcObject = frontStream;
-            statusDiv.textContent = "🔧 Kamera depan aktif. Coba lagi.";
-            startAutoScan();
-          } catch (frontErr) {
-            console.error("❌ Kamera depan juga gagal:", frontErr);
-            statusDiv.textContent = "❌ Kamera tidak tersedia di perangkat ini. Coba dari HP lain.";
-          }
+
+        // 🔎 Coba kamera depan jika gagal
+        try {
+          const frontStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: "user"
+            }
+          });
+
+          video.srcObject = frontStream;
+          statusDiv.textContent = "🔧 Kamera depan aktif. Scan sedang berjalan...";
+          startBtn.classList.add("hidden");
+          stopBtn.classList.remove("hidden");
+
+          isScanning = true;
+          startAutoScan();
+
+        } catch (frontErr) {
+          console.error("❌ Kamera depan juga gagal:", frontErr);
+          statusDiv.textContent = "❌ Kamera tidak tersedia. Gunakan HP dengan kamera belakang.";
+          startBtn.classList.add("hidden");
+          stopBtn.classList.remove("hidden");
         }
       }
     });
 
-    function startAutoScan() {
-      if (isScanning) return;
-      isScanning = true;
+    // ⏹️ Hentikan scan dan hentikan stream
+    stopBtn.addEventListener("click", () => {
+      if (!isScanning) return;
 
-      // 💡 Gunakan `setTimeout` + rekursif, bukan `setInterval` agar lebih stabil
-      const scanLoop = () => {
-        if (video.srcObject) {
-          try {
-            // 🚀 Scan setiap 500ms
-            codeReader.decodeFromVideoDevice(
-              null,
-              video,
-              (result, error) => {
-                if (result) {
-                  const text = result.getText();
-                  resultDiv.textContent = `✅ Ditemukan: ${text}`;
-                  statusDiv.textContent = "🟢 Scan berhasil – Menyimpan ke spreadsheet...";
-
-                  // 🔊 Suara notifikasi
-                  beepSound.currentTime = 0;
-                  beepSound.play().catch(() => console.warn("Tidak bisa memutar suara"));
-
-                  // 💾 Kirim ke Google Spreadsheet
-                  fetch(SPREADSHEET_URL, {
-                    method: "POST",
-                    body: new URLSearchParams({ value: text }),
-                    headers: {
-                      "Content-Type": "application/x-www-form-urlencoded"
-                    }
-                  })
-                  .then(res => res.json())
-                  .then(data => {
-                    if (data.status === "success") {
-                      console.log("✅ Berhasil simpan ke Spreadsheet");
-                    } else {
-                      console.warn("⚠️ Gagal simpan:", data);
-                    }
-                  })
-                  .catch(err => {
-                    console.error("❌ Gagal ke Google Apps Script:", err);
-                    statusDiv.textContent = "⚠️ Data terkirim, tetapi simpan gagal";
-                  });
-
-                  // ❌ Stop scan setelah 1 detik agar tidak terus-menerus
-                  setTimeout(() => {
-                    isScanning = false;
-                    // ⚠️ Re-start loop setelah penundaan
-                    setTimeout(scanLoop, 500);
-                  }, 1000);
-                } else if (error && !(error instanceof ZXing.NotFoundException)) {
-                  console.warn("Error scan:", error);
-                }
-              }
-            );
-
-          } catch (e) {
-            console.error("Error dalam scan loop:", e);
-            setTimeout(scanLoop, 1000); // Retry after 1s
-          }
-        } else {
-          setTimeout(scanLoop, 1000); // Tunggu stream
+      try {
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
         }
-      };
+        video.srcObject = null;
+        stopBtn.classList.add("hidden");
+        startBtn.classList.remove("hidden");
+        isScanning = false;
+        statusDiv.textContent = "⏸️ Scan dihentikan. Tekan Mulai Scan untuk memulai kembali.";
+      } catch (err) {
+        console.error("❌ Gagal mematikan kamera:", err);
+      }
+    });
 
-      // Mulai loop
-      scanLoop();
+    function startAutoScan() {
+      if (isScanning) {
+        // ❗ Gunakan `setTimeout` rekursif, bukan setInterval
+        const scanLoop = () => {
+          if (video.srcObject) {
+            try {
+              codeReader.decodeFromVideoDevice(
+                null,
+                video,
+                (result, error) => {
+                  if (result) {
+                    const text = result.getText();
+                    resultDiv.textContent = `✅ Ditemukan: ${text}`;
+                    statusDiv.textContent = "🟢 Scan berhasil – Menyimpan ke spreadsheet...";
+
+                    // 🔊 Suara notifikasi
+                    beepSound.currentTime = 0;
+                    beepSound.play().catch(() => console.warn("Tidak bisa memutar suara"));
+
+                    // 💾 Kirim ke Google Spreadsheet
+                    fetch(SPREADSHEET_URL, {
+                      method: "POST",
+                      body: new URLSearchParams({ value: text }),
+                      headers: {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                      }
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                      if (data.status === "success") {
+                        console.log("✅ Berhasil simpan ke Spreadsheet");
+                      } else {
+                        console.warn("⚠️ Gagal simpan:", data);
+                      }
+                    })
+                    .catch(err => {
+                      console.error("❌ Gagal ke Google Apps Script:", err);
+                      statusDiv.textContent = "⚠️ Data terkirim, tetapi simpan gagal";
+                    });
+
+                    // ❌ Hentikan scan setelah 1 detik
+                    setTimeout(() => {
+                      isScanning = false;
+                      // ✅ Restart loop setelah jeda
+                      setTimeout(scanLoop, 500);
+                    }, 1000);
+
+                  } else if (error && !(error instanceof ZXing.NotFoundException)) {
+                    console.warn("Error scan:", error);
+                  }
+                }
+              );
+            } catch (e) {
+              console.error("Error dalam scan loop:", e);
+              setTimeout(scanLoop, 1000);
+            }
+          } else {
+            setTimeout(scanLoop, 1000);
+          }
+        };
+
+        scanLoop();
+      }
     }
 
     // 🔒 Bersihkan stream jika halaman ditutup
