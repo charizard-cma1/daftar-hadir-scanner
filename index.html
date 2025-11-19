@@ -3,178 +3,94 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Scan Barcode</title>
+  <title>Scan Barcode Kamera</title>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
       margin: 0;
-      padding: 0;
-      background: #000;
-      color: #fff;
+      padding: 20px;
       text-align: center;
-      overflow: hidden;
-    }
-
-    .container {
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 40px 20px;
-    }
-
-    h1 {
-      margin-bottom: 5px;
-      font-size: 24px;
-      color: #27ae60;
-      letter-spacing: 0.5px;
-    }
-
-    .status {
-      margin-top: 10px;
-      font-size: 16px;
-      color: #aaa;
-    }
-
-    .scanner-frame {
-      position: relative;
-      width: 100%;
-      max-width: 600px;
-      margin: 20px auto;
-      border: 4px solid #e74c3c;
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
     }
 
     #video {
       width: 100%;
-      height: auto;
+      max-width: 640px;
+      border: 2px solid #007BFF;
+      border-radius: 12px;
+      margin: 20px auto;
       display: block;
-      background: #000;
     }
 
-    #result {
-      margin-top: 20px;
-      font-size: 20px;
-      color: #27ae60;
+    #status {
+      font-size: 1.1em;
+      margin: 15px 0;
+      color: #333;
       font-weight: 500;
-      min-height: 30px;
-      word-break: break-all;
     }
 
-    .info {
-      margin-top: 20px;
-      font-size: 14px;
-      color: #bbb;
-      max-width: 600px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    .button-group {
-      margin-top: 20px;
-      display: flex;
-      justify-content: center;
-      gap: 15px;
-      flex-wrap: wrap;
-    }
-
-    .btn {
+    #startBtn {
+      background: #007BFF;
+      color: white;
+      border: none;
       padding: 12px 30px;
       font-size: 16px;
-      font-weight: 500;
-      border: none;
-      border-radius: 25px;
+      border-radius: 8px;
       cursor: pointer;
-      transition: all 0.3s ease;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      transition: background 0.3s;
     }
 
-    .btn-start {
-      background: #27ae60;
-      color: white;
+    #startBtn:hover {
+      background: #0056b3;
     }
 
-    .btn-start:hover {
-      background: #219a52;
-      transform: translateY(-2px);
-    }
-
-    .btn-stop {
-      background: #e74c3c;
-      color: white;
-    }
-
-    .btn-stop:hover {
-      background: #c0392b;
-      transform: translateY(-2px);
-    }
-
-    .scan-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      background-image: radial-gradient(circle at center, transparent 20%, rgba(0,0,0,0.7) 100%);
-    }
-
-    .hidden {
+    #startBtn.hidden {
       display: none;
+    }
+
+    .error {
+      color: #d32f2f;
+      font-weight: bold;
+    }
+
+    .success {
+      color: #388e3c;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>🚀 Scan Barcode</h1>
-    <p class="status">📸 Kamera tidak aktif. Tekan tombol untuk memulai.</p>
-    <p class="info">Arahkan kamera ke barcode setelah memulai scan.</p>
 
-    <div class="scanner-frame">
-      <video id="video" autoplay playsinline></video>
-      <div class="scan-overlay"></div>
-    </div>
+  <h1>🔍 Scan Barcode dengan Kamera</h1>
+  <video id="video" autoplay playsinline></video>
+  <p id="status">Memuat kamera...</p>
 
-    <div id="result">Hasil scan muncul di sini...</div>
+  <button id="startBtn">🔍 Mulai Scan</button>
 
-    <div class="button-group">
-      <button id="startBtn" class="btn btn-start">▶️ Mulai Scan</button>
-      <button id="stopBtn" class="btn btn-stop hidden">⏹️ Hentikan</button>
-    </div>
-  </div>
-
-  <!-- 📦 ZXing.js (CDN) -->
-  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.0/dist/index.min.js"></script>
-
-  <!-- 🔊 Notifikasi suara -->
-  <audio id="beepSound" src="https://assets.mixkit.co/sfx/preview/mixkit-achievement-bell-2017.mp3" preload="auto"></audio>
+  <!-- ZXing.js untuk scan barcode -->
+  <script src="https://unpkg.com/@zxing/library@latest/dist/index.min.js"></script>
 
   <script>
-    const video = document.getElementById("video");
-    const resultDiv = document.getElementById("result");
-    const statusDiv = document.getElementById("status");
-    const startBtn = document.getElementById("startBtn");
-    const stopBtn = document.getElementById("stopBtn");
-    const beepSound = document.getElementById("beepSound");
+    const video = document.getElementById('video');
+    const statusDiv = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
 
-    // 📌 GANTI URL INI DENGAN URL DEPLOY GOOGLE APPS SCRIPT KAMU!
-    const SPREADSHEET_URL = "https://script.google.com/macros/s/AKfycby9fUvRa1m17xSSdkqWhq_jWUe0RPR9s_CU1ERuiu1R9FpKXxcKIqCr1OY43-sEgD4p/exec";
-
-    let isScanning = false;
     let stream;
-    let scanLoopInterval;
+    const codeReader = new ZXing.BrowserMultiFormatReader();
 
-    const codeReader = new ZXing.BrowserQRCodeReader();
+    // Tampilkan pesan error jelas
+    function showStatus(text, isError = false) {
+      statusDiv.textContent = text;
+      statusDiv.className = isError ? 'error' : 'success';
+    }
 
-    // ⚠️ Mulai scan saat tombol "Mulai Scan" ditekan
-    startBtn.addEventListener("click", async () => {
-      if (isScanning) return;
-
-      statusDiv.textContent = "🔍 Menyalakan kamera...";
+    // Mulai scanning
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      startBtn.textContent = "🔍 Memulai...";
 
       try {
-        // ❗ Prioritaskan kamera belakang (environment)
+        // Coba kamera belakang dulu
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 1280 },
@@ -184,132 +100,80 @@
         });
 
         video.srcObject = stream;
-        statusDiv.textContent = "✅ Kamera aktif. Scan sedang berjalan...";
-        startBtn.classList.add("hidden");
-        stopBtn.classList.remove("hidden");
+        showStatus("✅ Kamera belakang aktif. Scan sedang berjalan...");
 
-        isScanning = true;
-        startAutoScan();
-
-      } catch (err) {
-        console.error("❌ Gagal akses kamera:", err);
-
-        // 🔎 Coba kamera depan jika gagal
-        try {
-          const frontStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              facingMode: "user"
+        // Mulai scan barcode
+        await codeReader.decodeFromVideoDevice(
+          null, // kamera default (bisa pilih manual jika butuh)
+          video,
+          (result, err) => {
+            if (result) {
+              showStatus(`🎉 Barcode terbaca: ${result.getText()}`, false);
+              console.log("Barcode:", result.getText());
+              // Hentikan scan setelah ditemukan
+              codeReader.reset();
+            } else if (err && !(err instanceof ZXing.NotFoundException)) {
+              console.error("Error saat scan:", err);
+              // Coba fallback ke kamera depan
+              fallbackToUserCamera();
             }
-          });
-
-          video.srcObject = frontStream;
-          statusDiv.textContent = "🔧 Kamera depan aktif. Scan sedang berjalan...";
-          startBtn.classList.add("hidden");
-          stopBtn.classList.remove("hidden");
-
-          isScanning = true;
-          startAutoScan();
-
-        } catch (frontErr) {
-          console.error("❌ Kamera depan juga gagal:", frontErr);
-          statusDiv.textContent = "❌ Kamera tidak tersedia. Gunakan HP dengan kamera belakang.";
-          startBtn.classList.add("hidden");
-          stopBtn.classList.remove("hidden");
-        }
-      }
-    });
-
-    // ⏹️ Hentikan scan dan hentikan stream
-    stopBtn.addEventListener("click", () => {
-      if (!isScanning) return;
-
-      try {
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-        }
-        video.srcObject = null;
-        stopBtn.classList.add("hidden");
-        startBtn.classList.remove("hidden");
-        isScanning = false;
-        statusDiv.textContent = "⏸️ Scan dihentikan. Tekan Mulai Scan untuk memulai kembali.";
-      } catch (err) {
-        console.error("❌ Gagal mematikan kamera:", err);
-      }
-    });
-
-    function startAutoScan() {
-      if (isScanning) {
-        // ❗ Gunakan `setTimeout` rekursif, bukan setInterval
-        const scanLoop = () => {
-          if (video.srcObject) {
-            try {
-              codeReader.decodeFromVideoDevice(
-                null,
-                video,
-                (result, error) => {
-                  if (result) {
-                    const text = result.getText();
-                    resultDiv.textContent = `✅ Ditemukan: ${text}`;
-                    statusDiv.textContent = "🟢 Scan berhasil – Menyimpan ke spreadsheet...";
-
-                    // 🔊 Suara notifikasi
-                    beepSound.currentTime = 0;
-                    beepSound.play().catch(() => console.warn("Tidak bisa memutar suara"));
-
-                    // 💾 Kirim ke Google Spreadsheet
-                    fetch(SPREADSHEET_URL, {
-                      method: "POST",
-                      body: new URLSearchParams({ value: text }),
-                      headers: {
-                        "Content-Type": "application/x-www-form-urlencoded"
-                      }
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                      if (data.status === "success") {
-                        console.log("✅ Berhasil simpan ke Spreadsheet");
-                      } else {
-                        console.warn("⚠️ Gagal simpan:", data);
-                      }
-                    })
-                    .catch(err => {
-                      console.error("❌ Gagal ke Google Apps Script:", err);
-                      statusDiv.textContent = "⚠️ Data terkirim, tetapi simpan gagal";
-                    });
-
-                    // ❌ Hentikan scan setelah 1 detik
-                    setTimeout(() => {
-                      isScanning = false;
-                      // ✅ Restart loop setelah jeda
-                      setTimeout(scanLoop, 500);
-                    }, 1000);
-
-                  } else if (error && !(error instanceof ZXing.NotFoundException)) {
-                    console.warn("Error scan:", error);
-                  }
-                }
-              );
-            } catch (e) {
-              console.error("Error dalam scan loop:", e);
-              setTimeout(scanLoop, 1000);
-            }
-          } else {
-            setTimeout(scanLoop, 1000);
           }
-        };
+        );
 
-        scanLoop();
+      } catch (err) {
+        console.error("❌ Kamera belakang gagal:", err);
+        showStatus("🚫 Kamera belakang tidak tersedia. Coba kamera depan...");
+        await fallbackToUserCamera();
+      } finally {
+        startBtn.disabled = false;
+        startBtn.textContent = "🔍 Mulai Scan";
+      }
+    });
+
+    // Fallback: Gunakan kamera depan
+    async function fallbackToUserCamera() {
+      try {
+        const frontStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: "user"
+          }
+        });
+
+        video.srcObject = frontStream;
+        showStatus("📌 Fallback ke kamera depan berhasil. Scan berjalan...");
+
+        // Lanjutkan scan
+        await codeReader.decodeFromVideoDevice(
+          null,
+          video,
+          (result, err) => {
+            if (result) {
+              showStatus(`🎉 Barcode terbaca: ${result.getText()}`, false);
+              console.log("Barcode:", result.getText());
+              codeReader.reset();
+            } else if (err && !(err instanceof ZXing.NotFoundException)) {
+              console.error("Error saat scan:", err);
+            }
+          }
+        );
+
+      } catch (err2) {
+        console.error("❌ Kamera depan juga gagal:", err2);
+        showStatus("❌ Kamera tidak tersedia atau diblokir. Pastikan: <br>1. Gunakan HTTPS <br>2. Izinkan akses kamera di browser.", true);
+        startBtn.classList.add("hidden");
       }
     }
 
-    // 🔒 Bersihkan stream jika halaman ditutup
-    window.addEventListener("beforeunload", () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+    // Handle video close
+    video.addEventListener('loadedmetadata', () => {
+      video.play().catch(err => {
+        console.error("Video play error:", err);
+        showStatus("❌ Tidak bisa memutar video. Pastikan browser mengizinkan akses kamera.", true);
+      });
     });
   </script>
+
 </body>
 </html>
