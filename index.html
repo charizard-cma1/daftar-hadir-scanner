@@ -1,179 +1,115 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Scan Barcode Kamera</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background: #f0f2f5;
-      margin: 0;
-      padding: 20px;
-      text-align: center;
-    }
-
-    #video {
-      width: 100%;
-      max-width: 640px;
-      border: 2px solid #007BFF;
-      border-radius: 12px;
-      margin: 20px auto;
-      display: block;
-    }
-
-    #status {
-      font-size: 1.1em;
-      margin: 15px 0;
-      color: #333;
-      font-weight: 500;
-    }
-
-    #startBtn {
-      background: #007BFF;
-      color: white;
-      border: none;
-      padding: 12px 30px;
-      font-size: 16px;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-
-    #startBtn:hover {
-      background: #0056b3;
-    }
-
-    #startBtn.hidden {
-      display: none;
-    }
-
-    .error {
-      color: #d32f2f;
-      font-weight: bold;
-    }
-
-    .success {
-      color: #388e3c;
-      font-weight: bold;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barcode Scanner Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #f0f0f0; }
+        #video { width: 100%; max-width: 640px; border: 2px solid #ccc; }
+        button { padding: 10px 20px; font-size: 16px; margin: 10px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background: #45a049; }
+        #result { margin-top: 20px; font-size: 18px; color: #333; }
+        #debug { margin-top: 20px; background: #fff; padding: 10px; border: 1px solid #ddd; text-align: left; }
+    </style>
 </head>
 <body>
+    <h1>🔍 Barcode Scanner dengan Debug</h1>
+    <video id="video" autoplay muted playsinline></video>
+    <br>
+    <button id="startBtn">🚀 Mulai Scan</button>
+    <button id="stopBtn" disabled>⏹️ Stop</button>
+    <div id="result"></div>
+    <div id="debug"></div>
 
-  <h1>🔍 Scan Barcode dengan Kamera</h1>
-  <video id="video" autoplay playsinline></video>
-  <p id="status">Memuat kamera...</p>
+    <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script>
+        const video = document.getElementById('video');
+        const result = document.getElementById('result');
+        const debug = document.getElementById('debug');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        let stream = null;
 
-  <button id="startBtn">🔍 Mulai Scan</button>
+        // Fungsi debug log
+        function log(message) {
+            console.log(message);
+            debug.innerHTML += '<p>' + new Date().toLocaleTimeString() + ': ' + message + '</p>';
+        }
 
-  <!-- ZXing.js untuk scan barcode -->
-  <script src="https://unpkg.com/@zxing/library@latest/dist/index.min.js"></script>
+        startBtn.addEventListener('click', async () => {
+            try {
+                log('🟢 Mulai inisialisasi kamera...');
+                
+                // Cek support
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('getUserMedia tidak didukung di browser ini.');
+                }
+                log('✅ getUserMedia didukung.');
 
-  <script>
-    const video = document.getElementById('video');
-    const statusDiv = document.getElementById('status');
-    const startBtn = document.getElementById('startBtn');
+                // Request akses kamera
+                log('🔐 Meminta izin kamera...');
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment', // Kamera belakang kalau ada
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    } 
+                });
+                log('✅ Izin kamera diberikan. Stream aktif.');
 
-    let stream;
-    const codeReader = new ZXing.BrowserMultiFormatReader();
+                video.srcObject = stream;
+                video.play();
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
 
-    // Tampilkan pesan error jelas
-    function showStatus(text, isError = false) {
-      statusDiv.textContent = text;
-      statusDiv.className = isError ? 'error' : 'success';
-    }
+                // Scan loop
+                requestAnimationFrame(scan);
+                log('🎥 Video mulai streaming dan scan dimulai.');
 
-    // Mulai scanning
-    startBtn.addEventListener('click', async () => {
-      startBtn.disabled = true;
-      startBtn.textContent = "🔍 Memulai...";
-
-      try {
-        // Coba kamera belakang dulu
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: "environment"
-          }
+            } catch (error) {
+                log('❌ Error: ' + error.name + ' - ' + error.message);
+                result.innerHTML = 'Gagal akses kamera: ' + error.message;
+                console.error('Detail error:', error);
+            }
         });
 
-        video.srcObject = stream;
-        showStatus("✅ Kamera belakang aktif. Scan sedang berjalan...");
-
-        // Mulai scan barcode
-        await codeReader.decodeFromVideoDevice(
-          null, // kamera default (bisa pilih manual jika butuh)
-          video,
-          (result, err) => {
-            if (result) {
-              showStatus(`🎉 Barcode terbaca: ${result.getText()}`, false);
-              console.log("Barcode:", result.getText());
-              // Hentikan scan setelah ditemukan
-              codeReader.reset();
-            } else if (err && !(err instanceof ZXing.NotFoundException)) {
-              console.error("Error saat scan:", err);
-              // Coba fallback ke kamera depan
-              fallbackToUserCamera();
+        stopBtn.addEventListener('click', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
             }
-          }
-        );
-
-      } catch (err) {
-        console.error("❌ Kamera belakang gagal:", err);
-        showStatus("🚫 Kamera belakang tidak tersedia. Coba kamera depan...");
-        await fallbackToUserCamera();
-      } finally {
-        startBtn.disabled = false;
-        startBtn.textContent = "🔍 Mulai Scan";
-      }
-    });
-
-    // Fallback: Gunakan kamera depan
-    async function fallbackToUserCamera() {
-      try {
-        const frontStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: "user"
-          }
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            log('⏹️ Kamera dihentikan.');
+            result.innerHTML = '';
         });
 
-        video.srcObject = frontStream;
-        showStatus("📌 Fallback ke kamera depan berhasil. Scan berjalan...");
-
-        // Lanjutkan scan
-        await codeReader.decodeFromVideoDevice(
-          null,
-          video,
-          (result, err) => {
-            if (result) {
-              showStatus(`🎉 Barcode terbaca: ${result.getText()}`, false);
-              console.log("Barcode:", result.getText());
-              codeReader.reset();
-            } else if (err && !(err instanceof ZXing.NotFoundException)) {
-              console.error("Error saat scan:", err);
+        function scan() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                
+                if (code) {
+                    result.innerHTML = `✅ Barcode ditemukan: ${code.data}`;
+                    log('🎉 Barcode terdeteksi: ' + code.data);
+                    return; // Stop scan setelah ketemu
+                }
             }
-          }
-        );
+            requestAnimationFrame(scan);
+        }
 
-      } catch (err2) {
-        console.error("❌ Kamera depan juga gagal:", err2);
-        showStatus("❌ Kamera tidak tersedia atau diblokir. Pastikan: <br>1. Gunakan HTTPS <br>2. Izinkan akses kamera di browser.", true);
-        startBtn.classList.add("hidden");
-      }
-    }
-
-    // Handle video close
-    video.addEventListener('loadedmetadata', () => {
-      video.play().catch(err => {
-        console.error("Video play error:", err);
-        showStatus("❌ Tidak bisa memutar video. Pastikan browser mengizinkan akses kamera.", true);
-      });
-    });
-  </script>
-
+        // Cek HTTPS otomatis
+        if (location.protocol !== 'https:') {
+            log('⚠️ Peringatan: Ini bukan HTTPS! Kamera mungkin tidak jalan.');
+        } else {
+            log('✅ Berjalan di HTTPS — siap untuk kamera.');
+        }
+    </script>
 </body>
 </html>
