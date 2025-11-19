@@ -34,7 +34,7 @@
         let stream = null;
 
         // 📌 GANTI URL INI DENGAN URL DEPLOY GOOGLE SCRIPT KAMU
-        const SPREADSHEET_API_URL = 'https://script.google.com/macros/library/d/1u0W3fgZE2UERcmdRt6J4fp4MknrMVaLoCj0PbTqYHmHaORg3gQh2FIoj/3'; // <-- GANTI DI SINI!
+        const SPREADSHEET_API_URL = 'https://script.google.com/macros/s/AKfycby9fUvRa1m17xSSdkqWhq_jWUe0RPR9s_CU1ERuiu1R9FpKXxcKIqCr1OY43-sEgD4p/exec'; // <-- GANTI DI SINI!
 
         function log(message, isError = false) {
             const time = new Date().toLocaleTimeString();
@@ -114,31 +114,36 @@
         }
 
         async function sendToSpreadsheet(barcode) {
-            try {
-                const data = {
-                    barcode: barcode,
-                    device: navigator.platform,
-                    timestamp: new Date().toISOString()
-                };
+    try {
+        const data = {
+            barcode: barcode,
+            device: navigator.platform,
+            timestamp: new Date().toISOString()
+        };
 
-                log('📤 Mengirim data ke Google Sheet...');
-                const response = await fetch(SPREADSHEET_API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
+        const response = await fetch(SPREADSHEET_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
 
-                const result = await response.json();
-                if (result.status === 'success') {
-                    log('✅ Data berhasil dikirim ke Google Sheet!');
-                    result.innerHTML = '✅ Hasil berhasil dikirim ke spreadsheet!';
-                } else {
-                    log('❌ Gagal kirim data: ' + result.message, true);
-                }
-            } catch (error) {
-                log('❌ Gagal kirim data ke server: ' + error.message, true);
-            }
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
+
+        const result = await response.json();
+        if (result.status === 'success') {
+            log('✅ Data berhasil dikirim ke Google Sheet!');
+            result.innerHTML += ' (dan disubmit!)';
+        } else {
+            log('⚠️ Response: ' + JSON.stringify(result), true);
+        }
+    } catch (error) {
+        log('❌ Gagal kirim: ' + error.message + ' (Cek CORS di Google Apps Script)', true);
+        console.error('Full error:', error);
+    }
+}
+
 
         // Cek HTTPS otomatis
         if (location.protocol !== 'https:') {
