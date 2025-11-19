@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barcode Scanner Debug</title>
+    <title>Barcode Scanner with Google Sheet Submission</title>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; background: #f0f0f0; }
         #video { width: 100%; max-width: 640px; border: 2px solid #ccc; }
@@ -11,10 +11,12 @@
         button:hover { background: #45a049; }
         #result { margin-top: 20px; font-size: 18px; color: #333; }
         #debug { margin-top: 20px; background: #fff; padding: 10px; border: 1px solid #ddd; text-align: left; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>🔍 Barcode Scanner dengan Debug</h1>
+    <h1>🔍 Barcode Scanner + Submit ke Google Sheet</h1>
     <video id="video" autoplay muted playsinline></video>
     <br>
     <button id="startBtn">🚀 Mulai Scan</button>
@@ -31,46 +33,48 @@
         const stopBtn = document.getElementById('stopBtn');
         let stream = null;
 
-        // Fungsi debug log
-        function log(message) {
+        // 📌 GANTI URL INI DENGAN URL DEPLOY GOOGLE SCRIPT KAMU
+        const SPREADSHEET_API_URL = 'https://script.google.com/macros/library/d/1u0W3fgZE2UERcmdRt6J4fp4MknrMVaLoCj0PbTqYHmHaORg3gQh2FIoj/3'; // <-- GANTI DI SINI!
+
+        function log(message, isError = false) {
+            const time = new Date().toLocaleTimeString();
+            const type = isError ? '❌' : '🟢';
+            const status = isError ? 'error' : 'success';
+            const style = isError ? 'class="error"' : 'class="success"';
+            debug.innerHTML += `<p ${style}>${type} ${time}: ${message}</p>`;
             console.log(message);
-            debug.innerHTML += '<p>' + new Date().toLocaleTimeString() + ': ' + message + '</p>';
         }
 
         startBtn.addEventListener('click', async () => {
             try {
-                log('🟢 Mulai inisialisasi kamera...');
+                log('📱 Memulai inisialisasi kamera...');
                 
-                // Cek support
+                // Cek dukungan
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    throw new Error('getUserMedia tidak didukung di browser ini.');
+                    throw new Error('Browser tidak mendukung getUserMedia.');
                 }
-                log('✅ getUserMedia didukung.');
+                log('✅ Dukungan kamera tersedia.');
 
-                // Request akses kamera
+                // Request kamera
                 log('🔐 Meminta izin kamera...');
                 stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: 'environment', // Kamera belakang kalau ada
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    } 
+                    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
                 });
-                log('✅ Izin kamera diberikan. Stream aktif.');
+                log('✅ Kamera aktif. Streaming dimulai.');
 
                 video.srcObject = stream;
                 video.play();
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
 
-                // Scan loop
+                // Start scan loop
                 requestAnimationFrame(scan);
-                log('🎥 Video mulai streaming dan scan dimulai.');
+                log('🎥 Scan barcode dimulai.');
 
             } catch (error) {
-                log('❌ Error: ' + error.name + ' - ' + error.message);
+                log('❌ ' + error.message, true);
                 result.innerHTML = 'Gagal akses kamera: ' + error.message;
-                console.error('Detail error:', error);
+                console.error('Error detail:', error);
             }
         });
 
@@ -81,7 +85,7 @@
             }
             startBtn.disabled = false;
             stopBtn.disabled = true;
-            log('⏹️ Kamera dihentikan.');
+            log('⏹️ Kamera dimatikan.');
             result.innerHTML = '';
         });
 
@@ -96,19 +100,51 @@
                 const code = jsQR(imageData.data, imageData.width, imageData.height);
                 
                 if (code) {
-                    result.innerHTML = `✅ Barcode ditemukan: ${code.data}`;
+                    result.innerHTML = `✅ Barcode ditemukan: <strong>${code.data}</strong>`;
                     log('🎉 Barcode terdeteksi: ' + code.data);
-                    return; // Stop scan setelah ketemu
+
+                    // 📤 Kirim ke Google Sheet
+                    sendToSpreadsheet(code.data);
+
+                    // Stop scan untuk menghindari duplikat
+                    return;
                 }
             }
             requestAnimationFrame(scan);
         }
 
+        async function sendToSpreadsheet(barcode) {
+            try {
+                const data = {
+                    barcode: barcode,
+                    device: navigator.platform,
+                    timestamp: new Date().toISOString()
+                };
+
+                log('📤 Mengirim data ke Google Sheet...');
+                const response = await fetch(SPREADSHEET_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                if (result.status === 'success') {
+                    log('✅ Data berhasil dikirim ke Google Sheet!');
+                    result.innerHTML = '✅ Hasil berhasil dikirim ke spreadsheet!';
+                } else {
+                    log('❌ Gagal kirim data: ' + result.message, true);
+                }
+            } catch (error) {
+                log('❌ Gagal kirim data ke server: ' + error.message, true);
+            }
+        }
+
         // Cek HTTPS otomatis
         if (location.protocol !== 'https:') {
-            log('⚠️ Peringatan: Ini bukan HTTPS! Kamera mungkin tidak jalan.');
+            log('⚠️ Peringatan: Ini bukan HTTPS! Kamera dan fetch mungkin gagal!', true);
         } else {
-            log('✅ Berjalan di HTTPS — siap untuk kamera.');
+            log('✅ Aplikasi berjalan di HTTPS — aman untuk kamera & fetch.');
         }
     </script>
 </body>
