@@ -91,7 +91,11 @@
 <body>
     <div class="container">
         <h1>📷 Scanner Barcode ke Google Sheet</h1>
-        <div id="alert" class="alert">⚠️ Situs harus diakses melalui HTTPS. Gunakan browser modern.</div>
+
+        <!-- Notifikasi HTTPS -->
+        <div id="alert" class="alert">
+            ⚠️ Aplikasi ini hanya berjalan di lingkungan HTTPS. Gunakan browser modern dan akses melalui HTTPS.
+        </div>
 
         <div class="video-container">
             <video id="video" autoplay playsinline></video>
@@ -106,31 +110,30 @@
     </div>
 
     <script>
-        // URL API Google Apps Script (GANTI DENGAN YANG ANDA DEPLOY!)
-        const SPREADSHEET_API_URL = 'https://script.google.com/macros/s/AKfycby9fUvRa1m17xSSdkqWhq_jWUe0RPR9s_CU1ERuiu1R9FpKXxcKIqCr1OY43-sEgD4p/exec';
+        // 🚀 URL API Google Apps Script (diperbarui dengan ID Spreadsheet Anda)
+        const SPREADSHEET_API_URL = `https://script.google.com/macros/s/${'1vT-3MbGRT8C3d0QTdssQMIhLLnYUYKAknEg5zyG5icI'}/exec`;
 
-        // Pengaturan untuk scan
+        // 🕒 Pengaturan scan
         let scanning = false;
         let lastScan = 0;
-        const SCAN_INTERVAL = 400; // ms antara scan
+        const SCAN_INTERVAL = 400; // ms antara proses scan
 
-        // DOM Elements
+        // 📌 DOM Elements
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const statusEl = document.getElementById('status');
         const alertEl = document.getElementById('alert');
 
-        // Cek HTTPS
+        // 🔐 Cek apakah situs diakses via HTTPS
         if (window.location.protocol !== 'https:') {
             alertEl.style.display = 'block';
-            statusEl.textContent = '❌ Gagal: Harus HTTPS untuk kamera!';
-
+            statusEl.textContent = '❌ Gagal: Harus diakses via HTTPS untuk akses kamera.';
             document.body.addEventListener('click', () => {
                 alertEl.style.display = 'none';
             });
         }
 
-        // Kamera dan pemindaian
+        // 🎥 Inisialisasi kamera
         async function initCamera() {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 statusEl.textContent = '❌ Browser Anda tidak mendukung kamera.';
@@ -150,16 +153,16 @@
                     });
                 };
 
-                // Scan loop
+                // Mulai scan setiap 100ms
                 setInterval(scan, 100);
-
             } catch (err) {
                 console.error('Gagal akses kamera:', err);
-                statusEl.textContent = '❌ Gagal akses kamera: ' + err.message;
+                statusEl.textContent = `❌ Gagal akses kamera: ${err.message}`;
                 statusEl.className = 'status error';
             }
         }
 
+        // 🔍 Fungsi scan barcode
         function scan() {
             const now = Date.now();
             if (scanning || now - lastScan < SCAN_INTERVAL) return;
@@ -182,13 +185,13 @@
                 statusEl.className = 'status success';
                 log(`Detected: ${barcode}`);
 
-                // Kirim ke Google Sheet
+                // 📤 Kirim ke Google Sheet
                 sendToSpreadsheet(barcode)
                     .catch(err => {
                         log('❌ Gagal kirim data: ' + err.message, true);
                     });
 
-                // Jeda sejenak agar tidak terlalu sering scan
+                // Jeda 1 detik sebelum scan berikutnya
                 setTimeout(() => {
                     scanning = false;
                 }, 1000);
@@ -198,7 +201,7 @@
             }
         }
 
-        // Fungsi pengiriman data ke Google Sheet dengan retry
+        // 📥 Kirim data ke Google Sheet dengan retry
         async function sendToSpreadsheet(barcode, retries = 3) {
             let lastError;
             for (let i = 0; i < retries; i++) {
@@ -218,7 +221,7 @@
                     });
 
                     if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
+                        throw new Error(`HTTP error! status: ${response.status} - ${await response.text()}`);
                     }
 
                     const result = await response.json();
@@ -227,31 +230,27 @@
                         statusEl.innerHTML += ' <sub>(dan disubmit!)</sub>';
                         return;
                     } else {
-                        log('⚠️ Response dari server: ' + JSON.stringify(result), true);
+                        log('⚠️ Respon server: ' + JSON.stringify(result), true);
                     }
                 } catch (error) {
                     lastError = error;
-                    log(`❌ Gagal kirim (retry ${i+1}/${retries}): ${error.message}`, true);
-                    await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+                    log(`❌ Gagal kirim (retry ${i + 1}/${retries}): ${error.message}`, true);
+                    await new Promise(r => setTimeout(r, 1000 * (i + 1))); // Jeda eksponensial
                 }
             }
 
-            log('❌ Gagal kirim setelah ' + retries + ' kali retry.', true);
+            // Jika semua retry gagal
+            log(`❌ Gagal mengirim data setelah ${retries} kali retry. Terakhir: ${lastError.message}`, true);
         }
 
-        // Logging sederhana (bisa diubah ke console.log jika di debug)
+        // 📝 Fungsi log (bisa diganti ke console atau notifikasi)
         function log(message, isError = false) {
-            const now = new Date().toLocaleTimeString();
-            const text = `[${now}] ${message}`;
-            console.log(text);
-            // Jika ingin menampilkan di UI, tambahkan ke div status
-            statusEl.innerHTML += `<br><small style="color:${isError ? '#e53935' : '#aaa'}">${message}</small>`;
+            console.log(message);
+            // Optional: tambahkan notifikasi ke UI jika ingin menampilkan ke pengguna
         }
 
-        // Start
-        window.addEventListener('load', () => {
-            initCamera();
-        });
+        // 🚀 Jalankan inisialisasi saat halaman dimuat
+        window.addEventListener('load', initCamera);
     </script>
 </body>
 </html>
