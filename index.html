@@ -201,47 +201,55 @@
             }
         }
 
-        // 📥 Kirim data ke Google Sheet dengan retry
-        async function sendToSpreadsheet(barcode, retries = 3) {
-            let lastError;
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const data = {
-                        barcode: barcode,
-                        device: navigator.platform,
-                        timestamp: new Date().toISOString()
-                    };
+        // 📥 Kirim data ke Google Sheet dengan retry dan penanganan error yang kuat
+		async function sendToSpreadsheet(barcode, retries = 3) {
+			let lastError;
+			const data = {
+				barcode: barcode,
+				device: navigator.platform,
+				timestamp: new Date().toISOString()
+			};
 
-                    const response = await fetch(SPREADSHEET_API_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(data)
-                    });
+			for (let i = 0; i < retries; i++) {
+				try {
+					const response = await fetch(SPREADSHEET_API_URL, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify(data),
+					});
 
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status} - ${await response.text()}`);
-                    }
+					if (!response.ok) {
+						// Log detail error dari server
+						const errorText = await response.text();
+						throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+					}
 
-                    const result = await response.json();
-                    if (result.status === 'success') {
-                        log('✅ Data berhasil dikirim ke Google Sheet!');
-                        statusEl.innerHTML += ' <sub>(dan disubmit!)</sub>';
-                        return;
-                    } else {
-                        log('⚠️ Respon server: ' + JSON.stringify(result), true);
-                    }
-                } catch (error) {
-                    lastError = error;
-                    log(`❌ Gagal kirim (retry ${i + 1}/${retries}): ${error.message}`, true);
-                    await new Promise(r => setTimeout(r, 1000 * (i + 1))); // Jeda eksponensial
-                }
-            }
+					const result = await response.json();
 
-            // Jika semua retry gagal
-            log(`❌ Gagal mengirim data setelah ${retries} kali retry. Terakhir: ${lastError.message}`, true);
-        }
+					if (result.status === 'success') {
+						log('✅ Data berhasil dikirim ke Google Sheet!');
+						statusEl.innerHTML += ' <sub>(dan disubmit!)</sub>';
+						return; // Berhasil, keluar dari loop
+					} else {
+						log(`⚠️ Respon server tidak sukses: ${JSON.stringify(result)}`, true);
+					}
+				} catch (error) {
+					lastError = error;
+					log(`❌ Gagal kirim (retry ${i + 1}/${retries}): ${error.message}`);
+					
+					// Jeda sebelum retry (exponential backoff)
+					await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+				}
+			}
+
+			// Jika semua retry gagal
+			log(`❌ Gagal mengirim data setelah ${retries} kali retry. Error: ${lastError.message}`, true);
+			statusEl.innerHTML = `❌ Gagal kirim ke Google Sheet: ${lastError.message}`;
+			statusEl.className = 'status error';
+		}
+
 
         // 📝 Fungsi log (bisa diganti ke console atau notifikasi)
         function log(message, isError = false) {
