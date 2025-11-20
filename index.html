@@ -1,156 +1,257 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barcode Scanner with Google Sheet Submission</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Barcode Scanner ke Google Sheet</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; background: #f0f0f0; }
-        #video { width: 100%; max-width: 640px; border: 2px solid #ccc; }
-        button { padding: 10px 20px; font-size: 16px; margin: 10px; background: #4CAF50; color: white; border: none; cursor: pointer; }
-        button:hover { background: #45a049; }
-        #result { margin-top: 20px; font-size: 18px; color: #333; }
-        #debug { margin-top: 20px; background: #fff; padding: 10px; border: 1px solid #ddd; text-align: left; }
-        .success { color: green; font-weight: bold; }
-        .error { color: red; font-weight: bold; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #121212;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+            background: #1e1e1e;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+        h1 {
+            margin-bottom: 16px;
+            font-size: 1.8rem;
+            color: #00c853;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            margin: 20px auto;
+            border: 2px dashed #555;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        #video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .status {
+            margin-top: 16px;
+            font-size: 0.9rem;
+            color: #aaa;
+            min-height: 20px;
+        }
+        .success {
+            color: #00c853;
+        }
+        .error {
+            color: #e53935;
+        }
+        .info {
+            color: #2196f3;
+        }
+        .hint {
+            margin-top: 20px;
+            font-size: 0.85rem;
+            color: #777;
+        }
+        .alert {
+            background: #e53935;
+            color: #fff;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            display: none;
+        }
     </style>
 </head>
 <body>
-    <h1>🔍 Barcode Scanner + Submit ke Google Sheet</h1>
-    <video id="video" autoplay muted playsinline></video>
-    <br>
-    <button id="startBtn">🚀 Mulai Scan</button>
-    <button id="stopBtn" disabled>⏹️ Stop</button>
-    <div id="result"></div>
-    <div id="debug"></div>
+    <div class="container">
+        <h1>📷 Scanner Barcode ke Google Sheet</h1>
+        <div id="alert" class="alert">⚠️ Situs harus diakses melalui HTTPS. Gunakan browser modern.</div>
 
-    <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+        <div class="video-container">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div id="status" class="status">Menunggu pemindaian...</div>
+
+        <p class="hint">
+            Tempatkan barcode di tengah bingkai kamera. Gunakan kamera belakang untuk hasil terbaik.
+        </p>
+    </div>
+
     <script>
+        // URL API Google Apps Script (GANTI DENGAN YANG ANDA DEPLOY!)
+        const SPREADSHEET_API_URL = 'https://script.google.com/macros/s/AKfycby9fUvRa1m17xSSdkqWhq_jWUe0RPR9s_CU1ERuiu1R9FpKXxcKIqCr1OY43-sEgD4p/exec';
+
+        // Pengaturan untuk scan
+        let scanning = false;
+        let lastScan = 0;
+        const SCAN_INTERVAL = 400; // ms antara scan
+
+        // DOM Elements
         const video = document.getElementById('video');
-        const result = document.getElementById('result');
-        const debug = document.getElementById('debug');
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        let stream = null;
+        const canvas = document.getElementById('canvas');
+        const statusEl = document.getElementById('status');
+        const alertEl = document.getElementById('alert');
 
-        // 📌 GANTI URL INI DENGAN URL DEPLOY GOOGLE SCRIPT KAMU
-        const SPREADSHEET_API_URL = 'https://script.google.com/macros/s/AKfycby9fUvRa1m17xSSdkqWhq_jWUe0RPR9s_CU1ERuiu1R9FpKXxcKIqCr1OY43-sEgD4p/exec'; // <-- GANTI DI SINI!
+        // Cek HTTPS
+        if (window.location.protocol !== 'https:') {
+            alertEl.style.display = 'block';
+            statusEl.textContent = '❌ Gagal: Harus HTTPS untuk kamera!';
 
-        function log(message, isError = false) {
-            const time = new Date().toLocaleTimeString();
-            const type = isError ? '❌' : '🟢';
-            const status = isError ? 'error' : 'success';
-            const style = isError ? 'class="error"' : 'class="success"';
-            debug.innerHTML += `<p ${style}>${type} ${time}: ${message}</p>`;
-            console.log(message);
+            document.body.addEventListener('click', () => {
+                alertEl.style.display = 'none';
+            });
         }
 
-        startBtn.addEventListener('click', async () => {
-            try {
-                log('📱 Memulai inisialisasi kamera...');
-                
-                // Cek dukungan
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    throw new Error('Browser tidak mendukung getUserMedia.');
-                }
-                log('✅ Dukungan kamera tersedia.');
+        // Kamera dan pemindaian
+        async function initCamera() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                statusEl.textContent = '❌ Browser Anda tidak mendukung kamera.';
+                statusEl.className = 'status error';
+                return;
+            }
 
-                // Request kamera
-                log('🔐 Meminta izin kamera...');
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
                 });
-                log('✅ Kamera aktif. Streaming dimulai.');
 
                 video.srcObject = stream;
-                video.play();
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
+                video.onloadedmetadata = () => {
+                    video.play().catch(e => {
+                        console.warn('Gagal memutar video:', e);
+                    });
+                };
 
-                // Start scan loop
-                requestAnimationFrame(scan);
-                log('🎥 Scan barcode dimulai.');
+                // Scan loop
+                setInterval(scan, 100);
 
-            } catch (error) {
-                log('❌ ' + error.message, true);
-                result.innerHTML = 'Gagal akses kamera: ' + error.message;
-                console.error('Error detail:', error);
+            } catch (err) {
+                console.error('Gagal akses kamera:', err);
+                statusEl.textContent = '❌ Gagal akses kamera: ' + err.message;
+                statusEl.className = 'status error';
             }
-        });
-
-        stopBtn.addEventListener('click', () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                video.srcObject = null;
-            }
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
-            log('⏹️ Kamera dimatikan.');
-            result.innerHTML = '';
-        });
+        }
 
         function scan() {
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height);
-                
-                if (code) {
-                    result.innerHTML = `✅ Barcode ditemukan: <strong>${code.data}</strong>`;
-                    log('🎉 Barcode terdeteksi: ' + code.data);
+            const now = Date.now();
+            if (scanning || now - lastScan < SCAN_INTERVAL) return;
+            scanning = true;
 
-                    // 📤 Kirim ke Google Sheet
-                    sendToSpreadsheet(code.data);
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                    // Stop scan untuk menghindari duplikat
-                    return;
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, canvas.width, canvas.height, {
+                inversionAttempts: 'dontInvert',
+            });
+
+            if (code) {
+                lastScan = now;
+                const barcode = code.data;
+                statusEl.innerHTML = `✅ Ditemukan: <strong>${barcode}</strong>`;
+                statusEl.className = 'status success';
+                log(`Detected: ${barcode}`);
+
+                // Kirim ke Google Sheet
+                sendToSpreadsheet(barcode)
+                    .catch(err => {
+                        log('❌ Gagal kirim data: ' + err.message, true);
+                    });
+
+                // Jeda sejenak agar tidak terlalu sering scan
+                setTimeout(() => {
+                    scanning = false;
+                }, 1000);
+            } else {
+                statusEl.textContent = '🔎 Mencari barcode...';
+                scanning = false;
+            }
+        }
+
+        // Fungsi pengiriman data ke Google Sheet dengan retry
+        async function sendToSpreadsheet(barcode, retries = 3) {
+            let lastError;
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const data = {
+                        barcode: barcode,
+                        device: navigator.platform,
+                        timestamp: new Date().toISOString()
+                    };
+
+                    const response = await fetch(SPREADSHEET_API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        log('✅ Data berhasil dikirim ke Google Sheet!');
+                        statusEl.innerHTML += ' <sub>(dan disubmit!)</sub>';
+                        return;
+                    } else {
+                        log('⚠️ Response dari server: ' + JSON.stringify(result), true);
+                    }
+                } catch (error) {
+                    lastError = error;
+                    log(`❌ Gagal kirim (retry ${i+1}/${retries}): ${error.message}`, true);
+                    await new Promise(r => setTimeout(r, 1000 * (i + 1)));
                 }
             }
-            requestAnimationFrame(scan);
+
+            log('❌ Gagal kirim setelah ' + retries + ' kali retry.', true);
         }
 
-        async function sendToSpreadsheet(barcode) {
-    try {
-        const data = {
-            barcode: barcode,
-            device: navigator.platform,
-            timestamp: new Date().toISOString()
-        };
+        // Logging sederhana (bisa diubah ke console.log jika di debug)
+        function log(message, isError = false) {
+            const now = new Date().toLocaleTimeString();
+            const text = `[${now}] ${message}`;
+            console.log(text);
+            // Jika ingin menampilkan di UI, tambahkan ke div status
+            statusEl.innerHTML += `<br><small style="color:${isError ? '#e53935' : '#aaa'}">${message}</small>`;
+        }
 
-        const response = await fetch(SPREADSHEET_API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+        // Start
+        window.addEventListener('load', () => {
+            initCamera();
         });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        if (result.status === 'success') {
-            log('✅ Data berhasil dikirim ke Google Sheet!');
-            result.innerHTML += ' (dan disubmit!)';
-        } else {
-            log('⚠️ Response: ' + JSON.stringify(result), true);
-        }
-    } catch (error) {
-        log('❌ Gagal kirim: ' + error.message + ' (Cek CORS di Google Apps Script)', true);
-        console.error('Full error:', error);
-    }
-}
-
-
-        // Cek HTTPS otomatis
-        if (location.protocol !== 'https:') {
-            log('⚠️ Peringatan: Ini bukan HTTPS! Kamera dan fetch mungkin gagal!', true);
-        } else {
-            log('✅ Aplikasi berjalan di HTTPS — aman untuk kamera & fetch.');
-        }
     </script>
 </body>
 </html>
